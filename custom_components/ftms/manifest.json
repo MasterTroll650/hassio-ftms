@@ -1,6 +1,6 @@
 {
   "domain": "ftms",
-  "name": "Fitness Machine Service",
+  "name": "CUSTOM Fitness Machine Service",
   "bluetooth": [
     {
       "service_data_uuid": "00001826-0000-1000-8000-00805f9b34fb"
