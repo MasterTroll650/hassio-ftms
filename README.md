@@ -3,7 +3,7 @@
 > the device when Home Assistant starts while it is switched off. Device entities
 > become unavailable while disconnected. Tested with a Tretmann Walking Pad PRO.
 
-# Fitness Machine Service
+# CUSTOM Fitness Machine Service
 
 [Home Assistant](https://www.home-assistant.io/) [HACS](https://hacs.xyz/) custom component for working with fitness equipment with a Bluetooth interface.
 
