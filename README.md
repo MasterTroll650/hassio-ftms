@@ -1,3 +1,8 @@
+> **Fork changes:** This fork keeps the integration loaded when an FTMS device
+> sleeps or disconnects. It retries connections in the background and waits for
+> the device when Home Assistant starts while it is switched off. Device entities
+> become unavailable while disconnected. Tested with a Tretmann Walking Pad PRO.
+
 # Fitness Machine Service
 
 [Home Assistant](https://www.home-assistant.io/) [HACS](https://hacs.xyz/) custom component for working with fitness equipment with a Bluetooth interface.

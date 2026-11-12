@@ -62,7 +62,8 @@ class ConnectionSwitchEntity(FtmsEntity, SwitchEntity, RestoreEntity):
             await self.ftms.connect()
 
         except BleakError:
-            self.hass.config_entries.async_schedule_reload(self._data.entry_id)
+            _LOGGER.debug("FTMS connection failed; waiting for the next attempt")
+            self.ftms._disconnect_cb(self.ftms)
 
         finally:
             self._attr_is_on = True

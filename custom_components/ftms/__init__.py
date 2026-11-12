@@ -1,5 +1,6 @@
 """The FTMS integration."""
 
+import asyncio
 import logging
 
 import pyftms
@@ -36,6 +37,9 @@ type FtmsConfigEntry = ConfigEntry[FtmsData]
 async def async_unload_entry(hass: HomeAssistant, entry: FtmsConfigEntry) -> bool:
     """Unload a config entry."""
 
+    if not hasattr(entry, "runtime_data"):
+        return True
+
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         await entry.runtime_data.ftms.disconnect()
         bluetooth.async_rediscover_address(hass, entry.runtime_data.ftms.address)
@@ -44,18 +48,61 @@ async def async_unload_entry(hass: HomeAssistant, entry: FtmsConfigEntry) -> boo
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: FtmsConfigEntry) -> bool:
-    """Set up device from a config entry."""
+    """Load immediately and initialise the machine when it becomes available."""
+    task = None
+    stopped = False
+
+    async def _initialise() -> None:
+        while not stopped:
+            try:
+                await _async_setup_connected(hass, entry)
+                return
+            except (ConfigEntryNotReady, BleakError, TimeoutError) as exc:
+                _LOGGER.debug("FTMS device not ready; retrying: %s", exc)
+            await asyncio.sleep(30)
+
+    @callback
+    def _stop_initialise() -> None:
+        nonlocal stopped
+        stopped = True
+        if task and not task.done():
+            task.cancel()
+
+    entry.async_on_unload(_stop_initialise)
+    task = hass.async_create_background_task(_initialise(), f"ftms setup {entry.entry_id}")
+    return True
+
+
+async def _async_setup_connected(hass: HomeAssistant, entry: FtmsConfigEntry) -> None:
+    """Initialise platforms once the machine can be connected."""
 
     address: str = entry.data[CONF_ADDRESS]
 
     if not (srv_info := bluetooth.async_last_service_info(hass, address)):
         raise ConfigEntryNotReady(translation_key="device_not_found")
 
-    def _on_disconnect(ftms_: pyftms.FitnessMachine) -> None:
-        """Disconnect handler. Reload entry on disconnect."""
+    reconnect_task = None
+    stopping = False
 
-        if ftms_.need_connect:
-            hass.config_entries.async_schedule_reload(entry.entry_id)
+    async def _reconnect() -> None:
+        """Retry in the background until the machine wakes or is disabled."""
+        while not stopping and ftms.need_connect and not ftms.is_connected:
+            await asyncio.sleep(15)
+            if stopping or not ftms.need_connect or ftms.is_connected:
+                break
+            try:
+                await ftms.connect()
+            except Exception as exc:
+                _LOGGER.debug("FTMS reconnect failed for %s: %s", address, exc)
+            finally:
+                coordinator.async_update_listeners()
+
+    def _on_disconnect(ftms_: pyftms.FitnessMachine) -> None:
+        """Keep the entry loaded when the machine sleeps."""
+        nonlocal reconnect_task
+        coordinator.async_update_listeners()
+        if not stopping and ftms_.need_connect and (reconnect_task is None or reconnect_task.done()):
+            reconnect_task = hass.async_create_task(_reconnect())
 
     try:
         ftms = pyftms.get_client(
@@ -124,6 +171,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: FtmsConfigEntry) -> bool
             bluetooth.BluetoothScanningMode.ACTIVE,
         )
     )
+
+    @callback
+    def _stop_reconnect() -> None:
+        nonlocal stopping
+        stopping = True
+        if reconnect_task is not None:
+            reconnect_task.cancel()
+
+    entry.async_on_unload(_stop_reconnect)
 
     # Platforms initialization
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

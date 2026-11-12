@@ -37,6 +37,10 @@ class FtmsEntity(CoordinatorEntity[DataCoordinator], Entity):
     def key(self) -> str:
         return self.entity_description.key
 
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(self.coordinator.async_add_listener(self.async_write_ha_state))
+
     @property
     def available(self) -> bool:
         return self.ftms.is_connected and super().available
